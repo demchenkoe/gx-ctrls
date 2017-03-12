@@ -9,13 +9,13 @@ Include check user roles and validator for incomming parameters (used [Validator
 
 #### Inlude library
 
-	var gxCtrls = require('gx-ctrls');
+	var ctrls = require('gx-ctrls');
 
-#### Define action
+#### Define actions
 
 See [ValidatorJS constraints](https://validatejs.org/#constraints) for information about constraints structure.
 
-		class SayHelloAction extends gxCtrls.Action {
+		class SayHelloAction extends ctrls.Action {
 
 			get paramsConstraints() {
 				return {
@@ -29,17 +29,32 @@ See [ValidatorJS constraints](https://validatejs.org/#constraints) for informati
 					return ['ADMIN'] 
 			}
 
-			_run () {
+			process () {
 				return Promise.resolve(`Hello ${this.params.userName}`);
 			}
 		}
+		
+		class SayByeAction extends ctrls.Action {
+      process () {
+        return Promise.resolve('Bye');
+      }
+    }
 
-#### Define controller with SayHelloAction
+#### Run action without controller and dispatcher
+     
+     (new SayHelloAction(context, { userName: "John Doe" })).execute()
+       .then(
+         (result) => { console.log('result',result); },
+         (err) => { console.log("error", err); }
+       );
 
-		class HelloController extends gxCtrls.Contoller {
+#### Define controller with actions
+
+		class HelloController extends ctrls.Contoller {
 			get actions () {
 				return {
-					'sayHello': SayHelloAction
+					'sayHello': SayHelloAction,
+					'sayBye': SayByeAction
 				}
 			}
 		}
@@ -56,6 +71,53 @@ See [ValidatorJS constraints](https://validatejs.org/#constraints) for informati
 				(result) => { console.log('result',result); },
 				(err) => { console.log("error", err); }
 			);
+			
+			
+#### Use Dispatcher
+     
+     let dispatcher = new ctrls.Dispatcher();
+     
+     dispatcher.addController('Hello', HelloController);
+     
+     dispatcher.execute('Hello.sayHello', context, { userName: "John Doe" })
+       .then(
+         (result) => { console.log('result',result); },
+         (err) => { console.log("error", err); }
+       );
+       
+#### Use Dispatcher aliases for commands
+       
+       dispatcher.addAlias('Greetings.show', 'Hello.sayHello');
+       
+       dispatcher.execute('Greetings.show', context, { userName: "John Doe" })
+         .then(
+           (result) => { console.log('result',result); },
+           (err) => { console.log("error", err); }
+         );
+         
+### Use Dispatcher for bulk commands
+                  
+         
+         let commandsToExecute = [
+           { command: 'Hello.sayHello', params:  { userName: "John Doe" } },
+           { command: 'command.with.Error' },
+           { command: 'Hello.sayBye'}
+         ];
+         
+         dispatcher.executeBulk(context, commandsToExecute).then((results) => {
+           results.forEach((result) => {
+             console.log(result);
+           });
+         });
+         
+         /* Output results:
+         
+         Hello John Doe. You have administrator rights.
+         { error: { code: 'INVALID_COMMAND_NAME', ... },
+         Bye
+         
+         */
+			
 												
 #### Implementation with ExpressJS
 

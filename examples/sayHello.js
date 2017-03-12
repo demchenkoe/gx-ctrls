@@ -5,9 +5,10 @@
  */
 'use strict';
 
-var gxCtrls = require('../index');
+let ctrls = require('../index');
+let context = { user: { role: 'ADMIN' }};
 
-class SayHelloAction extends gxCtrls.Action {
+class SayHelloAction extends ctrls.Action {
 
   get paramsConstraints() {
     return {
@@ -17,29 +18,94 @@ class SayHelloAction extends gxCtrls.Action {
     }
   }
 
-  _run () {
-    return Promise.resolve(`Hello ${this.params.userName}`);
+  process () {
+    var message = `Hello ${this.params.userName}.`;
+    var role = this.pickRoleFromContext();
+    if(role === 'ADMIN') {
+      message +=  ' You have administrator rights.';
+    }
+    return Promise.resolve(message);
   }
 }
 
-class HelloController extends gxCtrls.Contoller {
+//Run action without controller and dispatcher
+
+(new SayHelloAction(context, { userName: "John Doe" })).execute()
+  .then(
+    (result) => { console.log('result',result); },
+    (err) => { console.log("error", err); }
+  );
+
+
+
+//Run action with controller
+
+class SayByeAction extends ctrls.Action {
+  process () {
+    return Promise.resolve('Bye');
+  }
+}
+
+class HelloController extends ctrls.Contoller {
   get actions () {
     return {
-      'sayHello': SayHelloAction
+      'sayHello': SayHelloAction,
+      'sayBye': SayByeAction
     }
   }
 }
 
+let controller = new HelloController(context);
 
-var ctrl = new HelloController();
-ctrl.callAction('sayHello', { userName: "John Doe" })
+controller.callAction('sayHello', { userName: "John Doe" })
   .then(
     (result) => { console.log('result',result); },
     (err) => { console.log("error", err); }
   );
 
-ctrl.callAction('sayHello')
+
+
+//Run action with dispatcher
+
+let dispatcher = new ctrls.Dispatcher();
+
+dispatcher.addController('Hello', HelloController);
+
+dispatcher.execute('Hello.sayHello', context, { userName: "John Doe" })
   .then(
     (result) => { console.log('result',result); },
     (err) => { console.log("error", err); }
   );
+
+
+//Run action by alias
+
+dispatcher.addAlias('Greetings.show', 'Hello.sayHello');
+
+dispatcher.execute('Greetings.show', context, { userName: "John Doe" })
+  .then(
+    (result) => { console.log('result',result); },
+    (err) => { console.log("error", err); }
+  );
+
+//Execute bulk
+
+let commandsToExecute = [
+  { command: 'Hello.sayHello', params:  { userName: "John Doe" } },
+  { command: 'command.with.Error' },
+  { command: 'Hello.sayBye'}
+];
+
+dispatcher.executeBulk(context, commandsToExecute).then((results) => {
+  results.forEach((result) => {
+    console.log(result);
+  });
+});
+
+/* Output results:
+
+Hello John Doe. You have administrator rights.
+{ error: { code: 'INVALID_COMMAND_NAME', ... },
+Bye
+
+*/
