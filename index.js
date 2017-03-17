@@ -58,7 +58,7 @@ class Action {
 
   checkAcckess() {
     let allowRoles, denyRoles;
-    let ctrl = this.options.ctrl;
+    let ctrl = this.context.$command.controller;
 
     if (Array.isArray(this.options.allowRoles)) {
       allowRoles = this.options.allowRoles;
@@ -123,6 +123,10 @@ class Action {
     if (context) {
       this.context = context;
     }
+    this.context || (this.context = {});
+    this.context.$command || (this.context.$command = {});
+    this.context.$command.action = this;
+
     if (params) {
       this.params = params;
     }
@@ -168,8 +172,11 @@ class Contoller {
   getActionInstance(actionName, params, options) {
     return this.getActionClass(actionName)
       .then((ActionClass) => {
-        let actionOptions = Object.assign({}, this.options, options, {ctrl: this});
-        return (new ActionClass(this.context, params, actionOptions));
+        this.context.$command || (this.context.$command = {});
+        this.context.$command.controller = this;
+        this.context.$command.actionClass = ActionClass;
+        var action = this.context.$command.action = new ActionClass(this.context, params,  this.options);
+        return Promise.resolve(action);
       });
   }
 
@@ -213,17 +220,18 @@ class Dispatcher {
     if (parts.length < 2) {
       return Promise.reject(defaultOptions.errorFormater('INVALID_COMMAND_NAME', 'Command name must be a string in format <controller>.<action>.'));
     }
-    let result = {
+    let $command = {
       command: command,
       ctrlName: parts[0],
-      actionName: parts[1]
+      actionName: parts[1],
+      dispatcher: this
     };
-    if (!this._controllers.hasOwnProperty(result.ctrlName)) {
-      return Promise.reject(defaultOptions.errorFormater('INVALID_COMMAND_NAME', `Not found handler for command ${result.command}`, result));
+    if (!this._controllers.hasOwnProperty($command.ctrlName)) {
+      return Promise.reject(defaultOptions.errorFormater('INVALID_COMMAND_NAME', `Not found handler for command ${$command.command}`, $command));
     }
-    result.ctrlClass = this._controllers[result.ctrlName];
+    $command.ctrlClass = this._controllers[$command.ctrlName];
 
-    return Promise.resolve(result);
+    return Promise.resolve($command);
   }
 
   addAlias(name, options) {
@@ -235,18 +243,22 @@ class Dispatcher {
 
   handleAlias(alias, context, params, options) {
     let aliasOptions = this._aliases[alias];
-    return this.parseCommandName(aliasOptions.command);
+    return this.parseCommandName(aliasOptions.command)
+      .then(($command) => {
+        $command.aliasName = alias;
+        $command.aliasOptions = aliasOptions;
+        return Promise.resolve($command);
+      });
   }
 
   execute(command, context, params, options) {
 
-    let executor = (commandInfo) => {
+    let executor = ($command) => {
       options || (options = {});
-      commandInfo.originalCommand = command;
-      options.commandInfo = commandInfo;
-
-      let controller = new commandInfo.ctrlClass(context, options);
-      return controller.callAction(commandInfo.actionName, params, options);
+      this.context = Object.assign({}, context || this.context);
+      this.context.$command = $command;
+      var controller = this.context.$command.controller = new $command.ctrlClass(context, options);
+      return controller.callAction($command.actionName, params, options);
     };
 
     if (this._aliases.hasOwnProperty(command)) {
@@ -260,6 +272,8 @@ class Dispatcher {
 
     let executor = (command, params, options) => {
       return new Promise((resolve, reject) => {
+        this.context = context || this.context || {};
+        this.context.$isBulk = true;
         this.execute(command, context, params, options).then(resolve, resolve);
       });
     };
