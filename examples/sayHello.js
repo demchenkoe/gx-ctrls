@@ -6,7 +6,15 @@
 'use strict';
 
 let ctrls = require('../index');
-let context = { user: { role: 'ADMIN' }};
+let context = {user: {role: 'ADMIN'}};
+
+function outputResult() {
+  console.log('result', result);
+}
+function outputError() {
+  console.log("error", err);
+}
+
 
 class SayHelloAction extends ctrls.Action {
 
@@ -18,11 +26,11 @@ class SayHelloAction extends ctrls.Action {
     }
   }
 
-  process () {
+  process() {
     var message = `Hello ${this.params.userName}.`;
     var role = this.pickRoleFromContext();
-    if(role === 'ADMIN') {
-      message +=  ' You have administrator rights.';
+    if (role === 'ADMIN') {
+      message += ' You have administrator rights.';
     }
     return Promise.resolve(message);
   }
@@ -30,24 +38,22 @@ class SayHelloAction extends ctrls.Action {
 
 //Run action without controller and dispatcher
 
-(new SayHelloAction(context, { userName: "John Doe" })).execute()
-  .then(
-    (result) => { console.log('result',result); },
-    (err) => { console.log("error", err); }
-  );
+(new SayHelloAction())
+  .execute(context, {userName: "John Doe"})
+  .then(outputResult, outputError);
 
 
 
 //Run action with controller
 
 class SayByeAction extends ctrls.Action {
-  process () {
+  process() {
     return Promise.resolve('Bye');
   }
 }
 
 class HelloController extends ctrls.Contoller {
-  get actions () {
+  get actions() {
     return {
       'sayHello': SayHelloAction,
       'sayBye': SayByeAction
@@ -55,57 +61,71 @@ class HelloController extends ctrls.Contoller {
   }
 }
 
-let controller = new HelloController(context);
+let controller = new HelloController();
 
-controller.callAction('sayHello', { userName: "John Doe" })
-  .then(
-    (result) => { console.log('result',result); },
-    (err) => { console.log("error", err); }
-  );
-
+controller
+  .execute(context, 'sayHello', {userName: "John Doe"})
+  .then(outputResult, outputError);
 
 
 //Run action with dispatcher
 
 let dispatcher = new ctrls.Dispatcher();
 
-dispatcher.addController('Hello', HelloController);
+dispatcher
+  .addController('Hello', HelloController);
 
-dispatcher.execute('Hello.sayHello', context, { userName: "John Doe" })
-  .then(
-    (result) => { console.log('result',result); },
-    (err) => { console.log("error", err); }
-  );
+dispatcher
+  .execute(context, 'Hello.sayHello', {userName: "John Doe"})
+  .then(outputResult, outputError);
 
 
 //Run action by alias
 
 dispatcher.addAlias('Greetings.show', 'Hello.sayHello');
 
-dispatcher.execute('Greetings.show', context, { userName: "John Doe" })
-  .then(
-    (result) => { console.log('result',result); },
-    (err) => { console.log("error", err); }
-  );
+dispatcher.execute(context, 'Greetings.show', {userName: "John Doe"})
+  .then(outputResult, outputError);
+
 
 //Execute bulk
 
 let commandsToExecute = [
-  { command: 'Hello.sayHello', params:  { userName: "John Doe" } },
-  { command: 'command.with.Error' },
-  { command: 'Hello.sayBye'}
+  {command: 'Hello.sayHello', params: {userName: "John Doe"}},
+  {command: 'command.with.Error'},
+  {command: 'Hello.sayBye'}
 ];
 
-dispatcher.executeBulk(context, commandsToExecute).then((results) => {
-  results.forEach((result) => {
-    console.log(result);
-  });
-});
+dispatcher
+  .executeBulk(context, commandsToExecute)
+  .then((results) => {
+    results.forEach((result) => {
+      console.log(result);
+    });
+  }, outputError);
 
 /* Output results:
 
-Hello John Doe. You have administrator rights.
-{ error: { code: 'INVALID_COMMAND_NAME', ... },
-Bye
+ Hello John Doe. You have administrator rights.
+ { error: { code: 'INVALID_COMMAND_NAME', ... },
+ Bye
 
-*/
+ */
+
+// Use ACL  @see https://github.com/djvirgen/virgen-acl
+
+let Acl = ctrls.Acl;
+let acl = new Acl();
+let options = {acl: acl, checkAccessOnAliases: true};
+
+acl.addResource("Hello");
+acl.deny();
+acl.allow('ADMIN', 'Hello');
+acl.allow('UNAUTHORIZED', 'Hello', ['sayHello','sayBye']);
+
+
+let params = {userName: "John Doe"};
+
+dispatcher
+  .execute(context, 'Greetings.show', params, options)
+  .then(outputResult, outputError);

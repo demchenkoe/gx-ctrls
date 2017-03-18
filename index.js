@@ -17,11 +17,24 @@ let defaultOptions = {
       error.details = details;
     }
     return {error: error};
+  },
+
+  pickRoleFromContext: function (context) {
+    if (!context) {
+      return defaultOptions.defaultRole;
+    }
+    if (context.role) {
+      return context.role;
+    }
+    let user = context.user || null;
+    return user && user.role ? user.role : defaultOptions.defaultRole;
   }
+
 };
 
 
 let validate = require("validate.js");
+let Acl = require("virgen-acl").Acl;
 
 validate.formatters.errorFormater = function (errors) {
   if (!errors.length) {
@@ -34,11 +47,109 @@ validate.formatters.errorFormater = function (errors) {
   return defaultOptions.errorFormater("INVALID_PARAMS", "Please send valid parameters.", details);
 };
 
-class Action {
-  constructor(context, params, options) {
-    this.context = context || {};
-    this.params = params || {};
-    this.options = Object.assign({}, defaultOptions, options);
+
+class Abstract {
+
+  constructor(options) {
+    this.options = options;
+  }
+
+  set options(options) {
+    if(!this._options) {
+      this._options = Object.assign({},  defaultOptions, options);
+    } else {
+      Object.assign(this._options, options);
+    }
+  }
+
+  get options() {
+    if(!this._options) {
+      this.options = {};
+    }
+    return this._options;
+  }
+
+  set context(ctx) {
+    this._context = ctx || {};
+  }
+
+  get context() {
+    return this._context || (this._context= {});
+  }
+
+  set acl(acl) {
+    this.options.acl = acl;
+  }
+
+  pickRoleFromContext(context) {
+    return this.options.pickRoleFromContext(context || this.context);
+  }
+
+  checkAccess(context) {
+    if (!this.options.acl || !context.$command || context.$command.isAllowed) {
+      return Promise.resolve(context.$command);
+    }
+    return new Promise((resolve, reject) => {
+
+      let role = this.pickRoleFromContext(context || this.context);
+      let resource = context.$command.controllerName;
+      let action = context.$command.actionName;
+      if(this.options.checkAccessOnAliases && context.$command.aliasName) {
+        let parts = context.$command.aliasName.split('.');
+        resource = parts[0];
+        action = parts[1];
+      }
+      this.options.acl.query(
+        role,
+        resource,
+        action,
+        (err, allowed) => {
+          
+          if (err) {
+            return reject(err);
+          }
+          context.$command.isAllowed = allowed;
+
+          if (!allowed) {
+            return reject(
+              this.options.errorFormater('ACCESS_DENIED', `This action not allowed for role "${role}".`, context.$command)
+            );
+          } else {
+            return resolve(context.$command);
+          }
+        });
+    });
+  }
+
+}
+
+class Action extends Abstract {
+
+  constructor(actionName, options) {
+    if(typeof actionName !== 'string') {
+      options = actionName;
+      actionName = null;
+    }
+    super(options);
+    this.actionName = actionName || this.constructor.name;
+  }
+  
+  set params(params) {
+    this._params = params;
+  }
+  get params() {
+    return this._params || (this._params = {});
+  }
+
+  set command(command) {
+    this._command = Object.assign({}, command, { action: this, actionName: this.actionName });
+  }
+
+  get command() {
+    if(!this._command) {
+      this.command = {};
+    }
+    return this._command;
   }
 
   validateParams() {
@@ -46,65 +157,6 @@ class Action {
       return Promise.resolve(true)
     }
     return validate.async(this.params, this.paramsConstraints, {format: this.options.validatorFormat});
-  }
-
-  pickRoleFromContext() {
-    if (this.context.role) {
-      return this.context.role;
-    }
-    let user = this.context.user || null;
-    return user && user.role ? user.role : this.options.defaultRole;
-  }
-
-  checkAcckess() {
-    let allowRoles, denyRoles;
-    let ctrl = this.context.$command.controller;
-
-    if (Array.isArray(this.options.allowRoles)) {
-      allowRoles = this.options.allowRoles;
-    } else if (Array.isArray(this.allowRoles)) {
-      allowRoles = this.allowRoles;
-    } else if (ctrl && Array.isArray(ctrl.allowRoles)) {
-      allowRoles = ctrl.allowRoles;
-    }
-
-    if (Array.isArray(this.options.denyRoles)) {
-      denyRoles = this.options.denyRoles;
-    } else if (Array.isArray(this.denyRoles)) {
-      denyRoles = this.denyRoles;
-    } else if (ctrl && Array.isArray(ctrl.denyRoles)) {
-      denyRoles = ctrl.denyRoles;
-    }
-
-    if (!Array.isArray(allowRoles) && !Array.isArray(denyRoles)) {
-      return Promise.resolve(true);
-    }
-
-    let currentRole = this.pickRoleFromContext();
-
-    if (Array.isArray(allowRoles)) {
-      if (allowRoles.indexOf(currentRole) !== -1) {
-        return Promise.resolve(true);
-      } else {
-
-        return Promise.reject(
-          defaultOptions.errorFormater('ACCESS_DENIED', `This action not allowed for role ${currentRole}.`,
-            {currentRole: currentRole, allowRoles: allowRoles})
-        );
-      }
-    }
-
-    if (Array.isArray(denyRoles)) {
-      if (denyRoles.indexOf(currentRole) !== -1) {
-
-        return Promise.reject(
-          defaultOptions.errorFormater('ACCESS_DENIED', `This action not allowed for role ${currentRole}.`,
-            {currentRole: currentRole, denyRoles: denyRoles})
-        );
-      } else {
-        return Promise.resolve(true);
-      }
-    }
   }
 
   before() {
@@ -119,34 +171,39 @@ class Action {
     return Promise.resolve(result);
   }
 
-  execute(params, context, options) {
-    if (context) {
-      this.context = context;
-    }
-    this.context || (this.context = {});
-    this.context.$command || (this.context.$command = {});
-    this.context.$command.action = this;
-
-    if (params) {
-      this.params = params;
-    }
+  execute(context, params, options) {
+    this.params = params;
+    this.context = context;
+    this.command = this.context.$command || {};
     if (options) {
-      this.options = Object.assign({}, defaultOptions, options);
+      this.options = options;
     }
-    //run all promises in series mode
-    return [this.before, this.validateParams, this.checkAcckess, this.process, this.after]
-      .reduce((pacc, fn) => {
-        return pacc = pacc.then(fn.bind(this));
-      }, Promise.resolve())
+   
+    return this.before()
+      .then(() => {
+        return this.validateParams();
+      })
+      .then(() => {
+        return this.checkAccess(this.context);
+      })
+      .then(() => {
+        return this.process(this.command);
+      })
+      .then((result) => {
+        return this.after(result);
+      });
   }
-
 }
 
-class Contoller {
+class Contoller extends Abstract {
 
-  constructor(context, options) {
-    this.context = context || {};
-    this.options = options || {};
+  constructor(controllerName, options) {
+    if(typeof controllerName !== 'string') {
+      options = controllerName;
+      controllerName = null;
+    }
+    super(options);
+    this._controllerName = controllerName || this.constructor.name;
     this._actions = {};
   }
 
@@ -169,13 +226,15 @@ class Contoller {
     return Promise.resolve(actionClass);
   }
 
-  getActionInstance(actionName, params, options) {
+  getActionInstance(actionName, context, options) {
     return this.getActionClass(actionName)
       .then((ActionClass) => {
-        this.context.$command || (this.context.$command = {});
-        this.context.$command.controller = this;
-        this.context.$command.actionClass = ActionClass;
-        var action = this.context.$command.action = new ActionClass(this.context, params,  this.options);
+        context || (context = {});
+        context.$command || (context.$command = {});
+        context.$command.controllerName = this._controllerName;
+        context.$command.controller = this;
+        context.$command.actionClass = ActionClass;
+        var action = context.$command.action = new ActionClass(actionName, Object.assign({}, this.options, options) );
         return Promise.resolve(action);
       });
   }
@@ -184,52 +243,83 @@ class Contoller {
     return Promise.resolve(action);
   }
 
-  process(action) {
-    return action.execute();
+  process(context, action, params, options) {
+    return action.execute(context, params, options);
   }
 
   after(result) {
     return Promise.resolve(result);
   }
 
-  callAction(actionName, params, options) {
-    return this.getActionInstance(actionName, params, options)
+  execute(context, actionName, params, options) {
+    let action;
+    return this.getActionInstance(actionName, context, options)
       .then(this.before.bind(this))
-      .then(this.process.bind(this))
+      .then((_action) => {
+        action = _action;
+        return this.checkAccess(context);
+      })
+      .then(() => {
+        return this.process(context, action, params, options);
+      })
       .then(this.after.bind(this));
   }
 }
 
-class Dispatcher {
+class Dispatcher extends Abstract {
 
-  constructor(controllers, options) {
-    this.options = options || {};
-    this._controllers = controllers || {};
+  constructor(dispatcherName, options) {
+    if(typeof dispatcherName !== 'string') {
+      options = dispatcherName;
+      dispatcherName = null;
+    }
+    super(options);
+    this._dispatcherName = dispatcherName || this.constructor.name;
+    this._controllers = {};
     this._aliases = {};
   }
 
-  addController(name, ctrlClass) {
-    this._controllers[name] = ctrlClass;
+  addController(name, controllerClass) {
+    if(name instanceof Contoller) {
+      controllerClass = name;
+      name = controllerClass.constructor.name;
+      this._controllers[name] = controllerClass;
+    }
+    else if(Array.isArray(name)) {
+      name.forEach((v) => {
+        this.addController(v);
+      });
+    }
+    else
+    if(typeof name === 'object') {
+      let controllers = name;
+      for(var k in controllers) {
+        if(!controllers.hasOwnProperty(k)) continue;
+        this._controllers[k] = controllers[k];
+      }
+    } else {
+      this._controllers[name] = controllerClass;
+    }
   }
 
   parseCommandName(command) {
     if (typeof command !== 'string') {
-      return Promise.reject(defaultOptions.errorFormater('INVALID_COMMAND_NAME', 'Argument "command" must be a string.'));
+      return Promise.reject(this.options.errorFormater('INVALID_COMMAND_NAME', 'Argument "command" must be a string.'));
     }
     let parts = command.split('.');
     if (parts.length < 2) {
-      return Promise.reject(defaultOptions.errorFormater('INVALID_COMMAND_NAME', 'Command name must be a string in format <controller>.<action>.'));
+      return Promise.reject(this.options.errorFormater('INVALID_COMMAND_NAME', 'Command name must be a string in format <controller>.<action>.'));
     }
     let $command = {
       command: command,
-      ctrlName: parts[0],
+      controllerName: parts[0],
       actionName: parts[1],
       dispatcher: this
     };
-    if (!this._controllers.hasOwnProperty($command.ctrlName)) {
-      return Promise.reject(defaultOptions.errorFormater('INVALID_COMMAND_NAME', `Not found handler for command ${$command.command}`, $command));
+    if (!this._controllers.hasOwnProperty($command.controllerName)) {
+      return Promise.reject(this.options.errorFormater('INVALID_COMMAND_NAME', `Not found handler for command ${$command.command}`, $command));
     }
-    $command.ctrlClass = this._controllers[$command.ctrlName];
+    $command.controllerClass = this._controllers[$command.controllerName];
 
     return Promise.resolve($command);
   }
@@ -241,7 +331,7 @@ class Dispatcher {
     this._aliases[name] = Object.assign({}, options);
   }
 
-  handleAlias(alias, context, params, options) {
+  handleAlias(context, alias, params, options) {
     let aliasOptions = this._aliases[alias];
     return this.parseCommandName(aliasOptions.command)
       .then(($command) => {
@@ -251,18 +341,18 @@ class Dispatcher {
       });
   }
 
-  execute(command, context, params, options) {
+  execute(context, command, params, options) {
 
     let executor = ($command) => {
       options || (options = {});
-      this.context = Object.assign({}, context || this.context);
-      this.context.$command = $command;
-      var controller = this.context.$command.controller = new $command.ctrlClass(context, options);
-      return controller.callAction($command.actionName, params, options);
+      context = Object.assign({}, context);
+      context.$command = $command;
+      var controller = context.$command.controller = new $command.controllerClass(options);
+      return controller.execute(context, $command.actionName , params, options);
     };
 
     if (this._aliases.hasOwnProperty(command)) {
-      return this.handleAlias(command, context, params, options).then(executor)
+      return this.handleAlias(context, command, params, options).then(executor)
     }
 
     return this.parseCommandName(command, context, params, options).then(executor);
@@ -272,9 +362,9 @@ class Dispatcher {
 
     let executor = (command, params, options) => {
       return new Promise((resolve, reject) => {
-        this.context = context || this.context || {};
-        this.context.$isBulk = true;
-        this.execute(command, context, params, options).then(resolve, resolve);
+        context = context || {};
+        context.$isBulk = true;
+        this.execute(context, command, params, options).then(resolve, resolve);
       });
     };
 
@@ -290,6 +380,8 @@ class Dispatcher {
 
 module.exports.defaultOptions = defaultOptions;
 module.exports.validate = validate;
+module.exports.Acl = Acl;
+module.exports.Abstract = Abstract;
 module.exports.Action = Action;
 module.exports.Contoller = Contoller;
 module.exports.Dispatcher = Dispatcher;

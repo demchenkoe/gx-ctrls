@@ -1,6 +1,6 @@
 {
   "name": "gx-ctrls",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Perfect nodejs library for abstract your handlers from framework and from transport of incomming requests. Include check user roles and validator for incomming parameters.",
   "main": "index.js",
   "scripts": {
@@ -8,8 +8,16 @@
   },
   "author": "Eugene Demchenko <demchenkoev@gmail.com>",
   "license": "ISC",
-  "keywords": ["controllers", "abstraction", "validation", "roles", "promises", "ES6"],
+  "keywords": [
+    "controllers",
+    "abstraction",
+    "validation",
+    "roles",
+    "promises",
+    "ES6"
+  ],
   "dependencies": {
-    "validate.js": "^0.11.1"
+    "validate.js": "^0.11.1",
+    "virgen-acl": "0.0.21"
   }
 }
