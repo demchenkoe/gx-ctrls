@@ -138,7 +138,7 @@ class Abstract {
   }
 
   getFieldsRule(role) {
-    if(!this.fieldsRules) {
+    if(!this.options.fieldsRules && !this.fieldsRules) {
       return null;
     }
     return _.find(this.options.fieldsRules || this.fieldsRules, (rule) => {
