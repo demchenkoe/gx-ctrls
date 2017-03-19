@@ -141,7 +141,7 @@ class Abstract {
     if(!this.fieldsRules) {
       return null;
     }
-    return _.find(this.fieldsRules, (rule) => {
+    return _.find(this.options.fieldsRules || this.fieldsRules, (rule) => {
       return Array.isArray(rule.roles) ?  rule.roles.indexOf(role) >= 0 : rule.roles === role;
     });
   }
