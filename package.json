@@ -1,6 +1,6 @@
 {
   "name": "gx-ctrls",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Perfect nodejs library for abstract your handlers from framework and from transport of incomming requests. Include check user roles and validator for incomming parameters.",
   "main": "index.js",
   "scripts": {
@@ -17,6 +17,7 @@
     "ES6"
   ],
   "dependencies": {
+    "lodash": "^4.17.4",
     "validate.js": "^0.11.1",
     "virgen-acl": "0.0.21"
   }

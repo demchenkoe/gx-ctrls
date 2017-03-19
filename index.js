@@ -35,6 +35,7 @@ let defaultOptions = {
 
 let validate = require("validate.js");
 let Acl = require("virgen-acl").Acl;
+let _ = require('lodash');
 
 validate.formatters.errorFormater = function (errors) {
   if (!errors.length) {
@@ -120,6 +121,63 @@ class Abstract {
         });
     });
   }
+
+  //Hide fields by rules
+
+  filterFields(obj, rule) {
+    let restricted = rule.restricted;
+    for(var i=0; i < restricted.length; i++) {
+      var pathParts = restricted[i].toString().split('.');
+      var field = pathParts.pop();
+      var deepObj = pathParts.length ? _.get(obj, pathParts) : obj;
+      if (deepObj) {
+        delete deepObj[field];
+      }
+    }
+    return obj;
+  }
+
+  getFieldsRule(role) {
+    if(!this.fieldsRules) {
+      return null;
+    }
+    return _.find(this.fieldsRules, (rule) => {
+      return Array.isArray(rule.roles) ?  rule.roles.indexOf(role) >= 0 : rule.roles === role;
+    });
+  }
+
+  applyFieldsRule(obj, roleOrConext) {
+    let role;
+    if(typeof roleOrConext === 'string') {
+      role = roleOrConext;
+    } else {
+      role = this.pickRoleFromContext(roleOrConext || this.context);
+    }
+    if(!role) {
+      return obj;
+    }
+
+    let rule = this.getFieldsRule(role);
+    if(!rule) {
+      return obj;
+    }
+
+    if(Array.isArray(obj) ) {
+      return _.map(obj, (obj) => {
+        return this.filterFields(obj, rule);
+      });
+    } else {
+      return this.filterFields(obj, rule);
+    }
+  }
+  /* Example, for rule
+
+  get fieldsRules() {
+    return [
+      { roles: ['guest'], restricted: ["deletedAt", "password", "salt"] }
+    ]
+  }
+  */
 
 }
 
