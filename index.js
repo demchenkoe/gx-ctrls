@@ -113,7 +113,7 @@ class Abstract {
 
           if (!allowed) {
             return reject(
-              this.options.errorFormater('ACCESS_DENIED', `This action not allowed for role "${role}".`, context.$command)
+              this.options.errorFormater('ACCESS_DENIED', `This action not allowed for role "${role}".`)
             );
           } else {
             return resolve(context.$command);
@@ -179,6 +179,34 @@ class Abstract {
   }
   */
 
+}
+
+class ActionResult {
+  constructor(data, context, params, options, command) {
+    this.data = data;
+    this.context = context;
+    this.params = params;
+    this.options = options;
+    if(command) {
+      this.command = command;
+    } else if(context.$command) {
+      this.command = Object.assign({}, context.$command);
+    }
+  }
+}
+
+class ActionError {
+  constructor(error, context, params, options, command) {
+    this.error = error;
+    this.context = context;
+    this.params = params;
+    this.options = options;
+    if(command) {
+      this.command = command;
+    } else if(context.$command) {
+      this.command = Object.assign({}, context.$command);
+    }
+  }
 }
 
 class Action extends Abstract {
@@ -247,9 +275,10 @@ class Action extends Abstract {
       .then(() => {
         return this.process(this.command);
       })
-      .then((result) => {
-        return this.after(result);
-      });
+      .then(
+        (result) => { return this.after( new ActionResult(result, this.context, this.params, this.options, this.command)); },
+        (error) => { return Promise.reject( new ActionError(error, this.context, this.params, this.options, this.command)); }
+      );
   }
 }
 
@@ -277,7 +306,7 @@ class Contoller extends Abstract {
     let actions = this.actions;
     if (!actions || !this.actions.hasOwnProperty(actionName)) {
       return Promise.reject(
-        defaultOptions.errorFormater('INVALID_ACTION_NAME', `Action ${actionName} not found.`, {actionName: actionName})
+        defaultOptions.errorFormater('INVALID_ACTION_NAME', `Action ${actionName} not found.`)
       );
     }
     let actionClass = this.actions[actionName];
@@ -320,7 +349,12 @@ class Contoller extends Abstract {
       .then(() => {
         return this.process(context, action, params, options);
       })
-      .then(this.after.bind(this));
+      .then(
+        (result) => { return this.after(result);},
+        (error) => { return Promise.reject(
+          error instanceof ActionError ? error : new ActionError(error, context, params, options)
+        )}
+        );
   }
 }
 
@@ -360,7 +394,11 @@ class Dispatcher extends Abstract {
     }
   }
 
-  parseCommandName(command) {
+  parseCommandName(context, command) {
+    let $command = context.$command = {
+      command: command,
+      dispatcher: this
+    };
     if (typeof command !== 'string') {
       return Promise.reject(this.options.errorFormater('INVALID_COMMAND_NAME', 'Argument "command" must be a string.'));
     }
@@ -368,14 +406,12 @@ class Dispatcher extends Abstract {
     if (parts.length < 2) {
       return Promise.reject(this.options.errorFormater('INVALID_COMMAND_NAME', 'Command name must be a string in format <controller>.<action>.'));
     }
-    let $command = {
-      command: command,
-      controllerName: parts[0],
-      actionName: parts[1],
-      dispatcher: this
-    };
+
+    $command.controllerName = parts[0];
+    $command.actionName = parts[1];
+
     if (!this._controllers.hasOwnProperty($command.controllerName)) {
-      return Promise.reject(this.options.errorFormater('INVALID_COMMAND_NAME', `Not found handler for command ${$command.command}`, $command));
+      return Promise.reject(this.options.errorFormater('INVALID_COMMAND_NAME', `Not found handler for command ${$command.command}`));
     }
     $command.controllerClass = this._controllers[$command.controllerName];
 
@@ -391,7 +427,7 @@ class Dispatcher extends Abstract {
 
   handleAlias(context, alias, params, options) {
     let aliasOptions = this._aliases[alias];
-    return this.parseCommandName(aliasOptions.command)
+    return this.parseCommandName(context, aliasOptions.command)
       .then(($command) => {
         $command.aliasName = alias;
         $command.aliasOptions = aliasOptions;
@@ -401,19 +437,30 @@ class Dispatcher extends Abstract {
 
   execute(context, command, params, options) {
 
+    options || (options = {});
+    context = Object.assign({}, context);
+
     let executor = ($command) => {
-      options || (options = {});
-      context = Object.assign({}, context);
-      context.$command = $command;
       var controller = context.$command.controller = new $command.controllerClass(options);
-      return controller.execute(context, $command.actionName , params, options);
+      return controller
+        .execute(context, $command.actionName , params, options)       
     };
 
     if (this._aliases.hasOwnProperty(command)) {
-      return this.handleAlias(context, command, params, options).then(executor)
+      return this
+        .handleAlias(context, command, params, options)
+        .then(executor)
+        .catch((error) => { return Promise.reject(
+          error instanceof ActionError ? error : new ActionError(error, context, params, options)
+        )});
     }
 
-    return this.parseCommandName(command, context, params, options).then(executor);
+    return this
+      .parseCommandName(context, command, params, options)
+      .then(executor)
+      .catch((error) => { return Promise.reject(
+        error instanceof ActionError ? error : new ActionError(error, context, params, options)
+      )});
   }
 
   executeBulk(context, commands, options) {
@@ -440,6 +487,8 @@ module.exports.defaultOptions = defaultOptions;
 module.exports.validate = validate;
 module.exports.Acl = Acl;
 module.exports.Abstract = Abstract;
+module.exports.ActionResult = ActionResult;
+module.exports.ActionError = ActionError;
 module.exports.Action = Action;
 module.exports.Contoller = Contoller;
 module.exports.Dispatcher = Dispatcher;

@@ -9,10 +9,10 @@ let ctrls = require('../index');
 let context = {user: {role: 'ADMIN'}};
 
 function outputResult(result) {
-  console.log('result', result);
+  console.log('result.data', result.data);
 }
-function outputError(err) {
-  console.log("error", err);
+function outputError(result) {
+  console.log("error", result.error);
 }
 
 
@@ -100,7 +100,11 @@ dispatcher
   .executeBulk(context, commandsToExecute)
   .then((results) => {
     results.forEach((result) => {
-      console.log(result);
+      if(result.data) {
+        console.log('result.data', result.data);
+      } else if(result.error) {
+        console.log('result.error', result.error);
+      }
     });
   }, outputError);
 
