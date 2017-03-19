@@ -8,10 +8,10 @@
 let ctrls = require('../index');
 let context = {user: {role: 'ADMIN'}};
 
-function outputResult() {
+function outputResult(result) {
   console.log('result', result);
 }
-function outputError() {
+function outputError(err) {
   console.log("error", err);
 }
 

@@ -125,7 +125,7 @@ class Abstract {
   //Hide fields by rules
 
   filterFields(obj, rule) {
-    let restricted = rule.restricted;
+    let restricted = rule.restrictedFields;
     for(var i=0; i < restricted.length; i++) {
       var pathParts = restricted[i].toString().split('.');
       var field = pathParts.pop();
@@ -137,11 +137,11 @@ class Abstract {
     return obj;
   }
 
-  getFieldsRule(role) {
-    if(!this.options.fieldsRules && !this.fieldsRules) {
+  getRule(role) {
+    if(!this.options.rules && !this.rules) {
       return null;
     }
-    return _.find(this.options.fieldsRules || this.fieldsRules, (rule) => {
+    return _.find(this.options.rules || this.rules, (rule) => {
       return Array.isArray(rule.roles) ?  rule.roles.indexOf(role) >= 0 : rule.roles === role;
     });
   }
@@ -157,7 +157,7 @@ class Abstract {
       return obj;
     }
 
-    let rule = this.getFieldsRule(role);
+    let rule = this.getRule(role);
     if(!rule) {
       return obj;
     }
@@ -172,9 +172,9 @@ class Abstract {
   }
   /* Example, for rule
 
-  get fieldsRules() {
+  get rules() {
     return [
-      { roles: ['guest'], restricted: ["deletedAt", "password", "salt"] }
+      { roles: ['guest'], restrictedFields: ["deletedAt", "password", "salt"] }
     ]
   }
   */
