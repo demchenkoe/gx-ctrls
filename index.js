@@ -282,7 +282,7 @@ class Action extends Abstract {
   }
 }
 
-class Contoller extends Abstract {
+class Controller extends Abstract {
 
   constructor(controllerName, options) {
     if(typeof controllerName !== 'string') {
@@ -372,7 +372,7 @@ class Dispatcher extends Abstract {
   }
 
   addController(name, controllerClass) {
-    if(name instanceof Contoller) {
+    if(name instanceof Controller) {
       controllerClass = name;
       name = controllerClass.constructor.name;
       this._controllers[name] = controllerClass;
@@ -490,5 +490,5 @@ module.exports.Abstract = Abstract;
 module.exports.ActionResult = ActionResult;
 module.exports.ActionError = ActionError;
 module.exports.Action = Action;
-module.exports.Contoller = Contoller;
+module.exports.Controller = Controller;
 module.exports.Dispatcher = Dispatcher;

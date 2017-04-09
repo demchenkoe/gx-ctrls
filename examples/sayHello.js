@@ -52,7 +52,7 @@ class SayByeAction extends ctrls.Action {
   }
 }
 
-class HelloController extends ctrls.Contoller {
+class HelloController extends ctrls.Controller {
   get actions() {
     return {
       'sayHello': SayHelloAction,
