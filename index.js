@@ -242,7 +242,10 @@ class Action extends Abstract {
     if (!this.paramsConstraints) {
       return Promise.resolve(true)
     }
-    return validate.async(this.params, this.paramsConstraints, {format: this.options.validatorFormat});
+    return validate.async(this.params, this.paramsConstraints, {
+      format: this.options.validatorFormat,
+      validate: validate, action: this
+    });
   }
 
   before() {
