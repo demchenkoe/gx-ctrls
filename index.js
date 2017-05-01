@@ -440,7 +440,7 @@ class Dispatcher extends Abstract {
 
   execute(context, command, params, options) {
 
-    options || (options = {});
+    options = Object.assign({}, this.options, options);
     context = Object.assign({}, context);
 
     let executor = ($command) => {
