@@ -86,7 +86,7 @@ class Abstract {
     return this.options.pickRoleFromContext(context || this.context);
   }
 
-  checkAccess(context) {
+  checkAccess(context, params, options) {
     if (!this.options.acl || !context.$command || context.$command.isAllowed) {
       return Promise.resolve(context.$command);
     }
@@ -273,7 +273,7 @@ class Action extends Abstract {
         return this.validateParams();
       })
       .then(() => {
-        return this.checkAccess(this.context);
+        return this.checkAccess(this.context, params, options);
       })
       .then(() => {
         return this.process(this.command);
@@ -347,7 +347,7 @@ class Controller extends Abstract {
       .then(this.before.bind(this))
       .then((_action) => {
         action = _action;
-        return this.checkAccess(context);
+        return this.checkAccess(context, params, options);
       })
       .then(() => {
         return this.process(context, action, params, options);
